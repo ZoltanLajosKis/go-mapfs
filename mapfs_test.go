@@ -112,6 +112,87 @@ func TestReadDir(t *testing.T) {
 	}
 }
 
+func TestConflictFile(t *testing.T) {
+	fs := make(MapFS)
+
+	fs.addFile("foo/bar.txt", &File{[]byte("a"), time.Now()})
+	err := fs.addFile("foo/bar.txt", &File{[]byte("b"), time.Now()})
+	if err != os.ErrExist {
+		t.Errorf("New(...) = %v; want os.ErrExist error", err)
+	}
+}
+
+func TestConflictDir(t *testing.T) {
+	files := make(Files)
+	files["foo/bar"] = &File{[]byte("a"), time.Now()}
+	files["foo/bar/three.txt"] = &File{[]byte("3"), time.Now()}
+	_, err := New(files)
+	if err != os.ErrExist {
+		t.Errorf("New(...) = %v; want os.ErrExist error", err)
+	}
+}
+
+func TestStat(t *testing.T) {
+	ts := []time.Time{time.Unix(1200000000, 0), time.Unix(1300000000, 0)}
+
+	files := make(Files)
+	files["foo/bar/three.txt"] = &File{[]byte("333"), ts[0]}
+	files["foo/bar.txt"] = &File{[]byte("22"), ts[1]}
+	fs, _ := New(files)
+
+	p1 := "foo/bar/three.txt"
+	fi1, err := fs.Stat(p1)
+	if err != nil {
+		t.Errorf("Stat(%q) = %v", p1, err)
+		return
+	}
+
+	assertFI(t, fi1, "three.txt", 3, ts[0], false)
+
+	p2 := "foo/bar.txt"
+	fi2, err := fs.Stat(p2)
+	if err != nil {
+		t.Errorf("Stat(%q) = %v", p2, err)
+		return
+	}
+
+	assertFI(t, fi2, "bar.txt", 2, ts[1], false)
+
+	p3 := "/xxxx"
+	_, err = fs.Stat(p3)
+	if !os.IsNotExist(err) {
+		t.Errorf("Stat(%q) = %v; want os.IsNotExist error", p3, err)
+	}
+}
+
+func TestString(t *testing.T) {
+	files, _ := New(nil)
+	assertEqual(t, fmt.Sprintf("%s", files), "mapfs")
+}
+
+func TestFIMode(t *testing.T) {
+	files := make(Files)
+	files["foo/bar/three.txt"] = &File{[]byte("333"), time.Unix(1200000000, 0)}
+	fs, _ := New(files)
+
+	pf := "foo/bar/three.txt"
+	fif, _ := fs.Stat(pf)
+	assertEqual(t, fif.Mode(), os.FileMode(0444))
+
+	pd := "foo"
+	fid, _ := fs.Stat(pd)
+	assertEqual(t, fid.Mode(), 0755|os.ModeDir)
+}
+
+func TestFISys(t *testing.T) {
+	files := make(Files)
+	files["foo/bar/three.txt"] = &File{[]byte("333"), time.Unix(1200000000, 0)}
+	fs, _ := New(files)
+
+	fid, _ := fs.Stat("foo")
+	assertEqual(t, fid.Sys(), nil)
+}
+
 func assertFI(t *testing.T, fi os.FileInfo, name string, size int, modTime time.Time, dir bool) {
 	assertEqual(t, fi.Name(), name)
 	assertEqual(t, fi.Size(), int64(size))
